@@ -19,15 +19,13 @@ func (q question) String() string {
 }
 
 func (s *server) externalExchange(req, out *dns.Msg) error {
+	if len(out.Answer) > 0 {
+		return ErrAlreadySet
+	}
+
 	s.Once.Do(func() { s.client = &dns.Client{Net: "udp"} })
 
-	//for _, question := range req.Question {
-	//	if question.Name == "." {
-	//		return fmt.Errorf("ignore, root query not supported")
-	//	}
-	//}
-
-	s.logger.Info("exchange with Google DNS")
+	s.logger.Debugw("exchange with Google DNS")
 
 	res, _, err := s.client.Exchange(req, "8.8.8.8:53")
 	if err != nil {
@@ -36,28 +34,37 @@ func (s *server) externalExchange(req, out *dns.Msg) error {
 
 	res.CopyTo(out)
 
+	if len(out.Answer) > 0 {
+		return ErrBreak
+	}
+
 	return nil
 }
 
 func (s *server) internalExchange(req, out *dns.Msg) error {
-	s.logger.Info("exchange with Docker DNS")
+	if len(out.Answer) > 0 {
+		return ErrAlreadySet
+	}
+
+	s.logger.Debugw("exchange with Docker DNS")
 
 	for _, q := range req.Question {
-		s.logger.Infow("resolving dns",
-			zap.Uint16("type", q.Qtype),
-			zap.String("name", q.Name))
+		s.logger.Debugw("resolving dns",
+			Query(q).Fields()...)
 
 		rec, err := s.stores.Get(q)
 		if err != nil {
 			s.logger.Warnw("fetch record failed",
-				zap.Uint16("type", q.Qtype),
-				zap.String("name", q.Name),
-				zap.Error(err))
+				Query(q).Fields(zap.Error(err))...)
 
 			continue
 		}
 
 		out.Answer = append(out.Answer, rec...)
+	}
+
+	if len(out.Answer) > 0 {
+		return ErrBreak
 	}
 
 	return nil
@@ -67,24 +74,27 @@ func (s *server) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	reply := &dns.Msg{}
 	reply.SetReply(req)
 
-	// handle external queries
-	if err := s.externalExchange(req, reply); err != nil {
-		s.logger.Warnw("could not exchange with Google DNS",
-			zap.String("query", question(req.Question).String()),
-			zap.Error(err))
-	}
+	resolvers := []func(req, reply *dns.Msg) error{
+		s.internalExchange,
+		s.externalExchange}
 
-	// handle internal queries
-	if err := s.internalExchange(req, reply); err != nil {
-		s.logger.Error("could not exchange with Docker DNS",
-			zap.String("query", question(req.Question).String()),
-			zap.Error(err))
+	for _, resolver := range resolvers {
+		switch err := resolver(req, reply); err {
+		default:
+			s.logger.Errorw("could not exchange with Docker DNS",
+				Queries(req.Question).Fields(zap.Error(err))...)
+
+			continue
+		case ErrAlreadySet, ErrBreak:
+			break
+		case nil:
+			continue
+		}
 	}
 
 	err := w.WriteMsg(reply)
 	if err != nil {
-		s.logger.Error("could not write reply",
-			zap.String("query", question(req.Question).String()),
-			zap.Error(err))
+		s.logger.Errorw("could not write reply",
+			Queries(req.Question).Fields(zap.Error(err))...)
 	}
 }

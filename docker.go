@@ -49,7 +49,7 @@ func (d *dockerStore) findContainerByHostname(hostname string) (*docker.Containe
 	return nil, ErrNotFound
 }
 
-func (d *dockerStore) fetchAllRecords() ([]dns.RR, error) {
+func (d *dockerStore) fetchAllRecords(query dns.Question) ([]dns.RR, error) {
 	containers, err := d.client.ListContainers(docker.ListContainersOptions{})
 	if err != nil {
 		return nil, err
@@ -60,6 +60,7 @@ func (d *dockerStore) fetchAllRecords() ([]dns.RR, error) {
 		var item *docker.Container
 		if item, err = d.client.InspectContainer(container.ID); err != nil {
 			d.logger.Warnw("could not inspect container",
+				zap.Stringer("query", question([]dns.Question{query})),
 				zap.String("container", container.ID),
 				zap.Error(err))
 
@@ -68,6 +69,7 @@ func (d *dockerStore) fetchAllRecords() ([]dns.RR, error) {
 
 		if strings.Count(item.Config.Hostname, ".") < 1 {
 			d.logger.Warnw("ignoring container with invalid hostname",
+				zap.Stringer("query", question([]dns.Question{query})),
 				zap.String("container", container.ID),
 				zap.String("hostname", item.Config.Hostname))
 
@@ -77,13 +79,14 @@ func (d *dockerStore) fetchAllRecords() ([]dns.RR, error) {
 		var ip net.IP
 		if ip, err = fetchIPAddress(item); err != nil {
 			d.logger.Warnw("could not fetch ip address",
+				zap.Stringer("query", question([]dns.Question{query})),
 				zap.String("container", container.ID),
 				zap.Error(err))
 
 			continue
 		}
 
-		records = append(records, &dns.A{
+		rec := &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   item.Config.Hostname + ".",
 				Rrtype: dns.TypeA,
@@ -91,7 +94,15 @@ func (d *dockerStore) fetchAllRecords() ([]dns.RR, error) {
 				Ttl:    3600,
 			},
 			A: ip,
-		})
+		}
+
+		records = append(records, rec)
+
+		d.cacheResult(dns.Question{
+			Name:   rec.Hdr.Name,
+			Qtype:  query.Qtype,
+			Qclass: query.Qclass,
+		}, container.ID, []dns.RR{rec})
 	}
 
 	return records, nil
@@ -179,8 +190,8 @@ func (d *dockerStore) fetchByIP(ip string, query dns.Question) ([]dns.RR, error)
 	return out, nil
 }
 
-func (d *dockerStore) fetchByHostname(hostname string, query dns.Question) ([]dns.RR, error) {
-	container, err := d.findContainerByHostname(hostname)
+func (d *dockerStore) fetchByHostname(query dns.Question) ([]dns.RR, error) {
+	container, err := d.findContainerByHostname(query.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +204,7 @@ func (d *dockerStore) fetchByHostname(hostname string, query dns.Question) ([]dn
 	out := []dns.RR{
 		&dns.A{
 			Hdr: dns.RR_Header{
-				Name:   hostname,
+				Name:   query.Name,
 				Rrtype: dns.TypeA,
 				Class:  dns.ClassINET,
 				Ttl:    3600,
@@ -211,10 +222,10 @@ func (d *dockerStore) Get(query dns.Question) ([]dns.RR, error) {
 	switch query.Qtype {
 	case dns.TypeA:
 		if query.Name == "." {
-			return d.fetchAllRecords()
+			return d.fetchAllRecords(query)
 		}
 
-		return d.fetchByHostname(query.Name, query)
+		return d.fetchByHostname(query)
 	case dns.TypePTR:
 		if !strings.Contains(query.Name, ".in-addr.arpa.") {
 			return nil, ErrNotFound
@@ -223,7 +234,7 @@ func (d *dockerStore) Get(query dns.Question) ([]dns.RR, error) {
 		ip := strings.TrimSuffix(query.Name, ".in-addr.arpa.")
 		ip = netutils.ReverseIP(ip)
 
-		d.logger.Info("reverse ip: ", ip)
+		d.logger.Debugw("reverse ip", zap.String("ip", ip))
 
 		return d.fetchByIP(ip, query)
 	default:

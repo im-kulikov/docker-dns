@@ -18,7 +18,8 @@ import (
 type settings struct {
 	config.Base
 
-	DNS dns.Config `env:"DNS"`
+	DNS dns.Config       `env:"DNS"`
+	API dns.RouterConfig `env:"ROUTER"`
 }
 
 var (
@@ -79,6 +80,10 @@ func main() {
 		service.WithService(wrk),
 		service.WithService(trace),
 		service.WithShutdownTimeout(cfg.Base.Shutdown))
+
+	if err = dns.UpdateStaticDNS(ctx, log, cfg.API); err != nil {
+		log.Fatalf("could not update DNS: %s", err)
+	}
 
 	if err = group.Run(context.Background()); err != nil {
 		log.Fatalf("something went wrong: %s", err)

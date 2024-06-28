@@ -1,6 +1,8 @@
 package dns
 
 import (
+	"errors"
+
 	"github.com/miekg/dns"
 )
 
@@ -14,7 +16,7 @@ func (c *chainStore) Get(query dns.Question) ([]dns.RR, error) {
 	for _, store := range c.stores {
 		if msg, err := store.Get(query); err == nil {
 			return msg, nil
-		} else if err != ErrNotFound {
+		} else if !errors.Is(err, ErrNotFound) {
 			return nil, err
 		}
 	}

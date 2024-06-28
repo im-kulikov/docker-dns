@@ -75,6 +75,9 @@ func (c *cache) Get(query dns.Question) ([]dns.RR, error) {
 		msg := new(dns.Msg)
 		msg.Answer = rec
 
+		c.log.Debugw("found record in cache",
+			Query(query).Fields()...)
+
 		return msg.Copy().Answer, nil
 	}
 
@@ -95,6 +98,9 @@ func (c *cache) Set(query dns.Question, cid string, rec []dns.RR) {
 	}
 
 	c.cnr[cid] = append(c.cnr[cid], query)
+
+	c.log.Debugw("added record to cache",
+		Query(query).Fields()...)
 }
 
 func (c *cache) handleStart(event *docker.APIEvents) {
@@ -140,10 +146,6 @@ func (c *cache) handleStart(event *docker.APIEvents) {
 		},
 	})
 
-	c.log.Info("added A record to cache",
-		zap.String("container", container.ID),
-		zap.String("hostname", container.Config.Hostname))
-
 	revip := netutils.ReverseIP(ipaddr.String())
 
 	c.Set(dns.Question{
@@ -161,29 +163,35 @@ func (c *cache) handleStart(event *docker.APIEvents) {
 			},
 		},
 	})
-
-	c.log.Info("added PTR record to cache",
-		zap.String("container", container.ID),
-		zap.String("hostname", container.Config.Hostname))
 }
 
 func (c *cache) handleDie(event *docker.APIEvents) {
+	c.Lock()
+	defer c.Unlock()
+
 	if queries, ok := c.cnr[event.ID]; ok {
 		for _, query := range queries {
+			if _, exists := c.rec[query]; !exists {
+				continue
+			}
+
 			delete(c.rec, query)
 
 			c.log.Debugw("removed record from cache",
-				zap.String("container", event.ID),
-				zap.String("hostname", query.Name))
+				Query(query).Fields(
+					zap.String("container", event.ID),
+					zap.String("hostname", query.Name))...)
 		}
 	}
+
+	delete(c.cnr, event.ID)
 }
 
 func (c *cache) handleEvent(event *docker.APIEvents) {
 	switch event.Action {
 	case "start":
 		c.handleStart(event)
-	case "die":
+	case "destroy", "die":
 		c.handleDie(event)
 	}
 }

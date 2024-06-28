@@ -1,16 +1,29 @@
-FROM golang:1.21.4 as builder
+FROM golang:alpine AS builder
 
-COPY . /app
-
-WORKDIR /app
+LABEL stage=gobuilder
 
 ENV CGO_ENABLED=0
 
-RUN go mod tidy
-RUN go build -o docker-dns /app/cmd/dns
+RUN apk update --no-cache && apk add --no-cache tzdata
 
-FROM alpine:latest as runner
+WORKDIR /build
 
-COPY --from=builder /app/docker-dns /bin/docker-dns
+ADD go.mod .
+ADD go.sum .
+RUN go mod download
+COPY . .
+RUN go build -ldflags="-s -w" -o /app/docker-dns /build/cmd/dns
+RUN go build -ldflags="-s -w" -o /app/docker-bgp /build/cmd/bgp
 
-CMD docker-dns
+
+FROM scratch
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=builder /usr/share/zoneinfo/Europe/Moscow /usr/share/zoneinfo/Europe/Moscow
+
+
+WORKDIR /app
+COPY --from=builder /app/docker-bgp /app/docker-bgp
+COPY --from=builder /app/docker-dns /app/docker-dns
+
+CMD ["./docker-dns"]
