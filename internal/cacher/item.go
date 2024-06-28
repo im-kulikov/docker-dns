@@ -1,6 +1,7 @@
 package cacher
 
 import (
+	"github.com/im-kulikov/docker-dns/internal/broadcast"
 	"sync"
 	"time"
 )
@@ -15,20 +16,15 @@ type CacheItem struct {
 
 	now time.Time
 	ext map[string]time.Time
+	brd broadcast.Broadcaster
 
 	toUpdate []string
 	toRemove []string
 }
 
-// UpdateMessage represents a message to update the DNS records
-type UpdateMessage struct {
-	ToUpdate []string
-	ToRemove []string
-}
-
 // NewItem creates a new CacheItem with the specified domain
-func NewItem(domain string) *CacheItem {
-	return &CacheItem{Domain: domain, now: time.Now(), ext: make(map[string]time.Time)}
+func NewItem(domain string, brd broadcast.Broadcaster) *CacheItem {
+	return &CacheItem{Domain: domain, brd: brd, now: time.Now(), ext: make(map[string]time.Time)}
 }
 
 // AddRecords updates the DNS records and resets the TTL to the minimum value
@@ -49,26 +45,9 @@ func (c *CacheItem) AddRecords(records []string, ttl uint32) {
 		c.Record = append(c.Record, record)
 
 		c.toUpdate = append(c.toUpdate, record)
+
+		c.brd.Broadcast(broadcast.UpdateMessage{ToUpdate: c.toUpdate})
 	}
-}
-
-// UpdateMessage returns the list of records to update and remove
-func (c *CacheItem) UpdateMessage() UpdateMessage {
-	c.RLock()
-	defer c.RUnlock()
-
-	var out UpdateMessage
-
-	out.ToUpdate = make([]string, len(c.toUpdate))
-	out.ToRemove = make([]string, len(c.toRemove))
-
-	copy(out.ToUpdate, c.toUpdate)
-	copy(out.ToRemove, c.toRemove)
-
-	c.toUpdate = c.toUpdate[:0]
-	c.toRemove = c.toRemove[:0]
-
-	return out
 }
 
 // IsExpired checks if the cache item is expired
@@ -94,4 +73,6 @@ func (c *CacheItem) Reset() {
 
 		c.Record = append(c.Record, key)
 	}
+
+	c.brd.Broadcast(broadcast.UpdateMessage{ToRemove: c.toRemove})
 }

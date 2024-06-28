@@ -2,6 +2,7 @@ package dns
 
 import (
 	"context"
+	"github.com/im-kulikov/docker-dns/internal/broadcast"
 	"github.com/im-kulikov/docker-dns/internal/cacher"
 	"github.com/im-kulikov/go-bones/logger"
 	"github.com/im-kulikov/go-bones/service"
@@ -25,16 +26,23 @@ type server struct {
 	ext chan struct{}
 	log logger.Logger
 	rec cacher.Interface
+	brd broadcast.Broadcaster
 
 	cancel context.CancelFunc
 }
 
-func New(cfg Config, log logger.Logger, rec cacher.Interface) (Interface, error) {
+func New(cfg Config, log logger.Logger, brd broadcast.Broadcaster) (Interface, error) {
+	rec, err := cacher.New()
+	if err != nil {
+		return nil, err
+	}
+
 	return &server{
 		cancel: func() {},
 
 		cfg: cfg,
 		log: log,
+		brd: brd,
 		rec: rec,
 		ext: make(chan struct{}),
 	}, nil

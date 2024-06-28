@@ -1,7 +1,7 @@
 package bgp
 
 import (
-	"github.com/im-kulikov/docker-dns/internal/cacher"
+	"github.com/im-kulikov/docker-dns/internal/broadcast"
 	"github.com/osrg/gobgp/pkg/packet/bgp"
 	"go.uber.org/zap"
 	"net/netip"
@@ -13,12 +13,11 @@ import (
 type plugin struct {
 	logger.Logger
 
-	cfg ConfigAttributes
-	rec cacher.Interface
+	rec broadcast.PeerManager
 }
 
-func NewPlugin(log logger.Logger, cfg ConfigAttributes, rec cacher.Interface) corebgp.Plugin {
-	return &plugin{Logger: log, cfg: cfg, rec: rec}
+func newPlugin(log logger.Logger, rec broadcast.PeerManager) corebgp.Plugin {
+	return &plugin{Logger: log, rec: rec}
 }
 
 func (p *plugin) GetCapabilities(peer corebgp.PeerConfig) []corebgp.Capability {
@@ -28,7 +27,7 @@ func (p *plugin) GetCapabilities(peer corebgp.PeerConfig) []corebgp.Capability {
 	return caps
 }
 
-func (p *plugin) OnOpenMessage(peer corebgp.PeerConfig, routerID netip.Addr, capabilities []corebgp.Capability) *corebgp.Notification {
+func (p *plugin) OnOpenMessage(peer corebgp.PeerConfig, _ netip.Addr, _ []corebgp.Capability) *corebgp.Notification {
 	p.Infow("peer open message", zap.Any("peer", peer))
 
 	return nil
@@ -36,13 +35,7 @@ func (p *plugin) OnOpenMessage(peer corebgp.PeerConfig, routerID netip.Addr, cap
 
 func (p *plugin) OnEstablished(peer corebgp.PeerConfig, writer corebgp.UpdateMessageWriter) corebgp.UpdateMessageHandler {
 	p.Infow("peer established", zap.Any("peer", peer))
-
-	// send peer updates
-	if err := p.sendUpdateMessage(writer, p.rec); err != nil {
-		return func(corebgp.PeerConfig, []byte) *corebgp.Notification {
-			return corebgp.UpdateNotificationFromErr(err)
-		}
-	}
+	p.rec.AddPeer(peer.RemoteAddress.String(), writer)
 
 	// send End-of-Rib
 	if err := writer.WriteUpdate([]byte{0, 0, 0, 0}); err != nil {
@@ -65,4 +58,6 @@ func (p *plugin) OnEstablished(peer corebgp.PeerConfig, writer corebgp.UpdateMes
 
 func (p *plugin) OnClose(peer corebgp.PeerConfig) {
 	p.Infow("peer closed", zap.Any("peer", peer))
+
+	p.rec.DelPeer(peer.RemoteAddress.String())
 }

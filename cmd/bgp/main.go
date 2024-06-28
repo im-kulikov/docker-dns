@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"github.com/im-kulikov/docker-dns/internal/bgp"
-	"github.com/im-kulikov/docker-dns/internal/cacher"
+	"github.com/im-kulikov/docker-dns/internal/broadcast"
 	"github.com/im-kulikov/docker-dns/internal/dns"
 	"github.com/im-kulikov/go-bones/config"
 	"github.com/im-kulikov/go-bones/logger"
@@ -47,27 +47,22 @@ func main() {
 	if log, err = logger.New(cfg.Logger); err != nil {
 		logger.Default().Panicw("could not create logger", zap.Error(err))
 	}
-	//
-	//spew.Dump(cfg)
-	//return
 
-	var rec cacher.Interface
-	if rec, err = cacher.New(); err != nil {
-		log.Panicw("could not create cache", zap.Error(err))
-	}
+	// prepare broadcaster
+	brd := broadcast.New(cfg.BGP.Attributes, log)
 
 	var svc dns.Interface
-	if svc, err = dns.New(cfg.DNS, log, rec); err != nil {
+	if svc, err = dns.New(cfg.DNS, log, brd); err != nil {
 		log.Panicw("could not create dns service", zap.Error(err))
 	}
 
 	var srv bgp.Interface
-	if srv, err = bgp.New(cfg.BGP, log, rec); err != nil {
+	if srv, err = bgp.New(cfg.BGP, log, brd); err != nil {
 		log.Panicw("could not create bgp service", zap.Error(err))
 	}
 
 	ops := web.NewOpsServer(log, cfg.Base.Ops)
-	if err = service.New(log, options(cfg, svc, srv, ops)...).Run(ctx); err != nil {
+	if err = service.New(log, options(cfg, brd, svc, srv, ops)...).Run(ctx); err != nil {
 		log.Panicw("could not create service runner", zap.Error(err))
 	}
 }

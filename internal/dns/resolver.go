@@ -12,7 +12,7 @@ import (
 func (s *server) resolve(ctx context.Context, out chan time.Duration, domain string) {
 	rec, ok := s.rec.Get(domain)
 	if !ok {
-		rec = cacher.NewItem(domain)
+		rec = cacher.NewItem(domain, s.brd)
 	} else if rec.IsExpired() {
 		s.log.Debugw("cache expired",
 			zap.String("domain", domain),
