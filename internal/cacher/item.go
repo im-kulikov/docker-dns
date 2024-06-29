@@ -17,9 +17,6 @@ type CacheItem struct {
 	now time.Time
 	ext map[string]time.Time
 	brd broadcast.Broadcaster
-
-	toUpdate []string
-	toRemove []string
 }
 
 // NewItem creates a new CacheItem with the specified domain
@@ -36,6 +33,7 @@ func (c *CacheItem) AddRecords(records []string, ttl uint32) {
 		c.Expire = ttl
 	}
 
+	toUpdate := make([]string, 0, len(records))
 	for _, record := range records {
 		if _, ok := c.ext[record]; ok {
 			continue
@@ -43,11 +41,10 @@ func (c *CacheItem) AddRecords(records []string, ttl uint32) {
 
 		c.ext[record] = time.Now().Add(time.Hour * 24)
 		c.Record = append(c.Record, record)
-
-		c.toUpdate = append(c.toUpdate, record)
-
-		c.brd.Broadcast(broadcast.UpdateMessage{ToUpdate: c.toUpdate})
+		toUpdate = append(toUpdate, record)
 	}
+
+	c.brd.Broadcast(broadcast.UpdateMessage{ToUpdate: toUpdate})
 }
 
 // IsExpired checks if the cache item is expired
@@ -64,15 +61,17 @@ func (c *CacheItem) Reset() {
 
 	c.Expire = 0 // reset TTL
 	c.Record = c.Record[:0]
+
+	toRemove := make([]string, 0, len(c.ext))
 	for key, now := range c.ext {
 		if c.now.After(now) {
 			delete(c.ext, key)
 
-			c.toRemove = append(c.toRemove, key)
+			toRemove = append(toRemove, key)
 		}
 
 		c.Record = append(c.Record, key)
 	}
 
-	c.brd.Broadcast(broadcast.UpdateMessage{ToRemove: c.toRemove})
+	c.brd.Broadcast(broadcast.UpdateMessage{ToRemove: toRemove})
 }
