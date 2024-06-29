@@ -75,25 +75,50 @@ func (s *server) AddPeer(peer string, writer corebgp.UpdateMessageWriter) {
 func (s *server) Broadcast(msg UpdateMessage) { s.out <- msg }
 
 func (s *server) updateList(list []string, msg UpdateMessage) []string {
-	out := make([]string, 0, len(list))
-	for _, cur := range list {
-		for _, rem := range msg.ToRemove {
-			if cur == rem {
-				continue
-			}
-
-			out = append(out, cur)
-		}
+	if len(msg.ToUpdate) == 0 && len(msg.ToRemove) == 0 {
+		return list
 	}
 
-	for _, add := range msg.ToUpdate {
-		out = append(out, add)
+	s.Infow("before update",
+		zap.Int("msg.update", len(msg.ToUpdate)),
+		zap.Int("msg.remove", len(msg.ToRemove)),
+		zap.Int("list", len(list)))
+
+	// Создаем карту для отслеживания элементов списка
+	listMap := make(map[string]bool)
+	for _, item := range list {
+		listMap[item] = true
 	}
 
-	return out
+	// Удаляем элементы, которые должны быть удалены
+	for _, item := range msg.ToRemove {
+		delete(listMap, item)
+	}
+
+	// Добавляем новые элементы
+	for _, item := range msg.ToUpdate {
+		listMap[item] = true
+	}
+
+	// Создаем обновленный список из карты
+	updatedList := make([]string, 0, len(listMap))
+	for item := range listMap {
+		updatedList = append(updatedList, item)
+	}
+
+	s.Infow("after update",
+		zap.Int("msg.update", len(msg.ToUpdate)),
+		zap.Int("msg.remove", len(msg.ToRemove)),
+		zap.Int("list", len(updatedList)))
+
+	return updatedList
 }
 
 func (s *server) sendInitialTables(writer corebgp.UpdateMessageWriter, msg UpdateMessage) error {
+	if len(msg.ToUpdate) == 0 && len(msg.ToRemove) == 0 {
+		return nil
+	}
+
 	removes := make([]*bgp.IPAddrPrefix, 0, len(msg.ToRemove))
 	for _, address := range msg.ToRemove {
 		removes = append(removes, bgp.NewIPAddrPrefix(32, address))
@@ -161,6 +186,12 @@ func (s *server) Start(ctx context.Context) error {
 				s.Infow("unknown Action", zap.Any("Action", msg))
 			}
 		case msg := <-s.out:
+			if len(msg.ToUpdate) == 0 && len(msg.ToRemove) == 0 {
+				s.Infow("ignore empty update")
+
+				continue
+			}
+
 			list = s.updateList(list, msg)
 
 			for client, writer := range peer {
