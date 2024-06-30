@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/im-kulikov/docker-dns/internal/admin"
 	"github.com/im-kulikov/docker-dns/internal/bgp"
 	"github.com/im-kulikov/docker-dns/internal/broadcast"
 	"github.com/im-kulikov/docker-dns/internal/dns"
@@ -17,8 +18,9 @@ import (
 type settings struct {
 	config.Base
 
-	BGP bgp.Config `env:"BGP"`
-	DNS dns.Config `env:"DNS"`
+	BGP bgp.Config     `env:"BGP"`
+	DNS dns.Config     `env:"DNS"`
+	Web web.HTTPConfig `env:"ADMIN"`
 }
 
 func options(cfg settings, services ...service.Service) []service.Option {
@@ -61,8 +63,9 @@ func main() {
 		log.Panicw("could not create bgp service", zap.Error(err))
 	}
 
+	adm := admin.New(cfg.Web, log, svc)
 	ops := web.NewOpsServer(log, cfg.Base.Ops)
-	if err = service.New(log, options(cfg, brd, svc, srv, ops)...).Run(ctx); err != nil {
+	if err = service.New(log, options(cfg, adm, brd, svc, srv, ops)...).Run(ctx); err != nil {
 		log.Panicw("could not create service runner", zap.Error(err))
 	}
 }

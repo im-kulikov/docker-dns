@@ -2,9 +2,11 @@ package broadcast
 
 import (
 	"context"
+	"github.com/containerd/containerd/pkg/atomic"
 	"github.com/osrg/gobgp/pkg/packet/bgp"
 	"go.uber.org/zap"
 	"sync"
+	"time"
 
 	"github.com/im-kulikov/go-bones/logger"
 	"github.com/jwhited/corebgp"
@@ -15,7 +17,7 @@ type server struct {
 	logger.Logger
 
 	cfg Config
-	ext chan struct{}
+	ext atomic.Bool
 	act chan updatePeer
 	out chan UpdateMessage
 }
@@ -50,29 +52,35 @@ func New(cfg Config, log logger.Logger) Interface {
 		Logger: log,
 
 		cfg: cfg,
-		ext: make(chan struct{}),
+		ext: atomic.NewBool(false),
 		act: make(chan updatePeer, 10),
 		out: make(chan UpdateMessage, 10),
 	}
 }
 
 func (s *server) DelPeer(peer string) {
-	select {
-	case <-s.ext:
-		s.Warnw("could not send remove peer", zap.String("peer", peer))
-	case s.act <- updatePeer{Peer: peer, Action: remPeer}:
+	if s.ext.IsSet() {
+		return
 	}
+
+	s.act <- updatePeer{Peer: peer, Action: remPeer}
 }
 
 func (s *server) AddPeer(peer string, writer corebgp.UpdateMessageWriter) {
-	select {
-	case <-s.ext:
-		s.Warnw("could not send add peer", zap.String("peer", peer))
-	case s.act <- updatePeer{Peer: peer, Action: addPeer, writer: writer}:
+	if s.ext.IsSet() {
+		return
 	}
+
+	s.act <- updatePeer{Peer: peer, Action: addPeer, writer: writer}
 }
 
-func (s *server) Broadcast(msg UpdateMessage) { s.out <- msg }
+func (s *server) Broadcast(msg UpdateMessage) {
+	if s.ext.IsSet() {
+		return
+	}
+
+	s.out <- msg
+}
 
 func (s *server) updateList(list []string, msg UpdateMessage) []string {
 	if len(msg.ToUpdate) == 0 && len(msg.ToRemove) == 0 {
@@ -159,16 +167,20 @@ func (s *server) Start(ctx context.Context) error {
 		peer = make(map[string]corebgp.UpdateMessageWriter)
 	)
 
+	ticker := time.NewTimer(time.Minute)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			s.Infow("broadcaster stopped")
 
+			s.ext.Set()
 			close(s.act)
 			close(s.out)
-			close(s.ext)
 
 			return nil
+
 		case msg := <-s.act:
 			switch msg.Action {
 			case addPeer:
@@ -187,7 +199,7 @@ func (s *server) Start(ctx context.Context) error {
 			}
 		case msg := <-s.out:
 			if len(msg.ToUpdate) == 0 && len(msg.ToRemove) == 0 {
-				s.Infow("ignore empty update")
+				s.Debugw("ignore empty update")
 
 				continue
 			}

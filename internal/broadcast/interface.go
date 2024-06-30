@@ -2,9 +2,9 @@ package broadcast
 
 import (
 	"context"
+
 	"github.com/im-kulikov/go-bones/service"
 	"github.com/jwhited/corebgp"
-	"time"
 )
 
 type Interface interface {
@@ -24,12 +24,4 @@ type Broadcaster interface {
 
 func (*server) Name() string { return "broadcaster" }
 
-func (s *server) Stop(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
-	defer cancel()
-
-	select {
-	case <-ctx.Done():
-	case <-s.ext:
-	}
-}
+func (s *server) Stop(context.Context) {}

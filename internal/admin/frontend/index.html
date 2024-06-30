@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cache Items</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<div class="container mt-5">
+    <h1 class="text-center mb-4">Домены</h1>
+    <div class="d-flex justify-content-between mb-4">
+        <form id="create-form" class="form-inline">
+            <div class="form-group mr-2">
+                <label for="domain" class="mr-2">Домен:</label>
+                <input type="text" id="domain" name="domain" class="form-control" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Создать</button>
+        </form>
+        <button id="refresh-button" class="btn btn-secondary">Обновить</button>
+    </div>
+    <table class="table table-bordered" id="cache-table">
+        <thead class="thead-light">
+        <tr>
+            <th>Домен</th>
+            <th>Кол-во IP</th>
+            <th>Действия</th>
+        </tr>
+        </thead>
+        <thead>
+        <tr>
+            <th colspan="1">Всего IP</th>
+            <th colspan="2" id="total-count">0</th>
+        </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+<!-- Bootstrap JS and dependencies -->
+<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const tableBody = document.querySelector('#cache-table tbody');
+        const createForm = document.querySelector('#create-form');
+        const totalCountElement = document.querySelector('#total-count');
+        const refreshButton = document.querySelector('#refresh-button');
+
+        const fetchCacheItems = async () => {
+            const response = await fetch('/api');
+            const data = await response.json();
+            tableBody.innerHTML = '';
+            if (data.list == null) return;
+            let totalCount = 0;
+
+            data.list.sort((a, b) => {
+                const l1 =a.record ? a.record.length : 0;
+                const l2 =b.record ? b.record.length : 0;
+
+                return l2 - l1;
+            });
+
+            data.list.forEach(item => {
+                const row = document.createElement('tr');
+
+                totalCount += item.record ? item.record.length : 0;
+
+                row.innerHTML = `
+                        <td>${item.domain}</td>
+                        <td>${item.record ? item.record.length : 0}</td>
+                        <td>
+                            <button class="btn btn-danger btn-sm" onclick="deleteItem('${item.domain}')">Delete</button>
+                            <button class="btn btn-warning btn-sm" onclick="editItem('${item.domain}')">Edit</button>
+                        </td>
+                    `;
+                tableBody.appendChild(row);
+            });
+
+            totalCountElement.textContent = totalCount;
+        };
+
+        createForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const formData = new FormData(createForm);
+            const domain = formData.get('domain');
+            const response = await fetch('/api', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domain }),
+            });
+            if (response.ok) {
+                fetchCacheItems();
+                createForm.reset();
+            } else {
+                alert('Error creating item');
+            }
+        });
+
+        refreshButton.addEventListener('click', fetchCacheItems);
+
+        window.deleteItem = async (domain) => {
+            const response = await fetch(`/api/${domain}`, { method: 'DELETE' });
+            if (response.ok) {
+                fetchCacheItems();
+            } else {
+                alert('Error deleting item');
+            }
+        };
+
+        window.editItem = (domain) => {
+            const newDomain = prompt('Enter new domain:', domain);
+            if (newDomain) {
+                fetch(`/api/${domain}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ domain: newDomain }),
+                }).then(response => {
+                    if (response.ok) {
+                        fetchCacheItems();
+                    } else {
+                        alert('Error updating item');
+                    }
+                });
+            }
+        };
+
+        fetchCacheItems();
+    });
+</script>
+</body>
+</html>

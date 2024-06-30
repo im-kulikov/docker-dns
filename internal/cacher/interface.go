@@ -9,6 +9,7 @@ import (
 type Interface interface {
 	Get(string) (*CacheItem, bool)
 	Set(string, *CacheItem) bool
+	Delete(string)
 	Range(Iter)
 }
 

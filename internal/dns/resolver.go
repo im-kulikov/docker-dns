@@ -4,15 +4,16 @@ import (
 	"context"
 	"time"
 
+	"github.com/im-kulikov/docker-dns/internal/broadcast"
 	"github.com/im-kulikov/docker-dns/internal/cacher"
 	"github.com/miekg/dns"
 	"go.uber.org/zap"
 )
 
-func (s *server) resolve(ctx context.Context, out chan time.Duration, domain string) {
+func (s *server) resolve(ctx context.Context, out chan fetchResult, domain string) {
 	rec, ok := s.rec.Get(domain)
 	if !ok {
-		rec = cacher.NewItem(domain, s.brd)
+		rec = cacher.NewItem(domain)
 	} else if rec.IsExpired() {
 		s.log.Debugw("cache expired",
 			zap.String("domain", domain),
@@ -33,6 +34,7 @@ func (s *server) resolve(ctx context.Context, out chan time.Duration, domain str
 		zap.String("domain", domain),
 		zap.Uint32("ttl", rec.Expire))
 
+	var res broadcast.UpdateMessage
 	msg := &dns.Msg{
 		MsgHdr:   dns.MsgHdr{RecursionDesired: true},
 		Question: []dns.Question{query},
@@ -42,7 +44,7 @@ func (s *server) resolve(ctx context.Context, out chan time.Duration, domain str
 	for _, srv := range s.cfg.Servers {
 		var result *dns.Msg
 		if result, err = dns.ExchangeContext(ctx, msg, srv); err != nil {
-			s.log.Errorw("could not resolve",
+			s.log.Debugw("could not resolve",
 				zap.String("domain", domain),
 				zap.String("server", srv),
 				zap.Error(err))
@@ -60,15 +62,16 @@ func (s *server) resolve(ctx context.Context, out chan time.Duration, domain str
 			}
 		}
 
-		rec.AddRecords(tmp, ttl)
+		upd := rec.AddRecords(tmp, ttl)
+		res.ToUpdate = append(res.ToUpdate, upd.ToUpdate...)
+		res.ToRemove = append(res.ToRemove, upd.ToRemove...)
 	}
 
-	out <- time.Second * time.Duration(rec.Expire)
-
+	s.rec.Set(domain, rec)
 	s.log.Debugw("resolved",
 		zap.String("domain", domain),
 		zap.Uint32("ttl", rec.Expire),
 		zap.Strings("records", rec.Record))
 
-	s.rec.Set(domain, rec)
+	out <- fetchResult{msg: res, ttl: time.Second * time.Duration(rec.Expire)}
 }

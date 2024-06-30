@@ -16,22 +16,35 @@ type CacheItem struct {
 
 	now time.Time
 	ext map[string]time.Time
-	brd broadcast.Broadcaster
 }
 
 // NewItem creates a new CacheItem with the specified domain
-func NewItem(domain string, brd broadcast.Broadcaster) *CacheItem {
-	return &CacheItem{Domain: domain, brd: brd, now: time.Now(), ext: make(map[string]time.Time)}
+func NewItem(domain string) *CacheItem {
+	return &CacheItem{Domain: domain, now: time.Now(), ext: make(map[string]time.Time)}
 }
 
 // AddRecords updates the DNS records and resets the TTL to the minimum value
-func (c *CacheItem) AddRecords(records []string, ttl uint32) {
+func (c *CacheItem) AddRecords(records []string, ttl uint32) broadcast.UpdateMessage {
 	c.Lock()
 	defer c.Unlock()
 
 	if ttl < c.Expire && ttl > 0 || c.Expire == 0 {
 		c.Expire = ttl
 	}
+
+	toRemove := make([]string, 0, len(c.ext))
+	newItems := make([]string, 0, len(c.ext))
+	for key, now := range c.ext {
+		if !time.Now().After(now) {
+			newItems = append(newItems, key)
+
+			continue
+		}
+
+		toRemove = append(toRemove, key)
+	}
+
+	c.Record = newItems // remove outdated
 
 	toUpdate := make([]string, 0, len(records))
 	for _, record := range records {
@@ -44,7 +57,7 @@ func (c *CacheItem) AddRecords(records []string, ttl uint32) {
 		toUpdate = append(toUpdate, record)
 	}
 
-	c.brd.Broadcast(broadcast.UpdateMessage{ToUpdate: toUpdate})
+	return broadcast.UpdateMessage{ToUpdate: toUpdate, ToRemove: toRemove}
 }
 
 // IsExpired checks if the cache item is expired
@@ -62,16 +75,11 @@ func (c *CacheItem) Reset() {
 	c.Expire = 0 // reset TTL
 	c.Record = c.Record[:0]
 
-	toRemove := make([]string, 0, len(c.ext))
 	for key, now := range c.ext {
 		if c.now.After(now) {
 			delete(c.ext, key)
-
-			toRemove = append(toRemove, key)
 		}
 
 		c.Record = append(c.Record, key)
 	}
-
-	c.brd.Broadcast(broadcast.UpdateMessage{ToRemove: toRemove})
 }
