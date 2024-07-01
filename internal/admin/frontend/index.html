@@ -18,6 +18,7 @@
             </div>
             <button type="submit" class="btn btn-primary">Создать</button>
         </form>
+        <button id="download-button" class="btn btn-info">Скачать список доменов</button>
         <button id="refresh-button" class="btn btn-secondary">Обновить</button>
     </div>
     <table class="table table-bordered" id="cache-table">
@@ -30,8 +31,12 @@
         </thead>
         <thead>
         <tr>
-            <th colspan="1">Количество IP адресов (всего / уникальных)</th>
-            <th colspan="2" id="total-count">0</th>
+            <th colspan="1">Количество IP адресов (уникальных / всего)</th>
+            <th colspan="2" id="total-ips-count">0</th>
+        </tr>
+        <tr>
+            <th colspan="1">Количество доменов (проверенных / всего)</th>
+            <th colspan="2" id="total-domains-count">0</th>
         </tr>
         </thead>
         <tbody></tbody>
@@ -45,9 +50,12 @@
     document.addEventListener('DOMContentLoaded', () => {
         const tableBody = document.querySelector('#cache-table tbody');
         const createForm = document.querySelector('#create-form');
-        const totalCountElement = document.querySelector('#total-count');
+        const totalIPsCount = document.querySelector('#total-ips-count');
+        const totalDomainsCount = document.querySelector('#total-domains-count');
         const refreshButton = document.querySelector('#refresh-button');
+        const downloadButton = document.querySelector('#download-button');
         let uniqueIPs = new Set();
+        let resolvedDomains = new Set();
 
         const fetchCacheItems = async () => {
             const response = await fetch('/api');
@@ -56,9 +64,16 @@
             if (data.list == null) return;
             let totalCount = 0;
 
+            uniqueIPs.clear();
+            resolvedDomains.clear();
+
             data.list.sort((a, b) => {
                 const l1 =a.record ? a.record.length : 0;
                 const l2 =b.record ? b.record.length : 0;
+
+                if ((l2 - l1) === 0) {
+                    return a.domain.localeCompare(b.domain);
+                }
 
                 return l2 - l1;
             });
@@ -68,6 +83,8 @@
                 const row = document.createElement('tr');
                 totalCount += item.record ? item.record.length : 0;
                 if (!!item.record) {
+                    resolvedDomains.add(item.domain)
+
                     item.record.forEach(ip => {
                         uniqueIPs.delete(ip);
                         uniqueIPs.add(ip);
@@ -85,7 +102,8 @@
                 tableBody.appendChild(row);
             });
 
-            totalCountElement.textContent = `${uniqueIPs.size} / ${totalCount}`;
+            totalIPsCount.textContent = `${uniqueIPs.size} / ${totalCount}`;
+            totalDomainsCount.textContent = `${resolvedDomains.size} / ${data.list.length}`;
         };
 
         createForm.addEventListener('submit', async (event) => {
@@ -106,6 +124,20 @@
         });
 
         refreshButton.addEventListener('click', fetchCacheItems);
+        downloadButton.addEventListener('click', () => {
+            let element = document.createElement('a');
+            const text = Array.from(resolvedDomains).join(",");
+
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+            element.setAttribute('download', 'domains.txt');
+
+            element.style.display = 'none';
+            document.body.appendChild(element);
+
+            element.click();
+
+            document.body.removeChild(element);
+        })
 
         window.deleteItem = async (domain) => {
             const response = await fetch(`/api/${domain}`, { method: 'DELETE' });

@@ -46,3 +46,18 @@ func (s *server) Delete(domain string) {
 }
 
 func (s *server) Range(iter cacher.Iter) { s.rec.Range(iter) }
+
+func (s *server) List() map[string]*cacher.CacheItem {
+	s.RLock()
+	out := make(map[string]*cacher.CacheItem, len(s.cfg.Domains))
+	for _, domain := range s.cfg.Domains {
+		if item, ok := s.rec.Get(domain); ok {
+			out[domain] = item
+		} else {
+			out[domain] = &cacher.CacheItem{Domain: domain}
+		}
+	}
+	s.RUnlock()
+
+	return out
+}

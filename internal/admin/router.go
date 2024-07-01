@@ -38,7 +38,7 @@ type Storage interface {
 	Get(string) (*cacher.CacheItem, bool)
 	Delete(string)
 	Set(string, *cacher.CacheItem) bool
-	Range(func(string, *cacher.CacheItem) bool)
+	List() map[string]*cacher.CacheItem
 }
 
 type ErrorHandler func(http.ResponseWriter, *http.Request) error
@@ -60,16 +60,14 @@ func validateDomain(domain string) error {
 
 func (s *server) listCacheItems(w http.ResponseWriter, _ *http.Request) error {
 	var result ResponseList
-
-	s.rec.Range(func(domain string, item *cacher.CacheItem) bool {
+	for _, item := range s.rec.List() {
 		result.List = append(result.List, ResponseItem{
 			Domain: item.Domain,
 			Record: item.Record,
 			Expire: time.Second * time.Duration(item.Expire),
 		})
 
-		return true
-	})
+	}
 
 	return json.NewEncoder(w).Encode(Response{ResponseList: &result})
 }

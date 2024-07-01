@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"github.com/im-kulikov/docker-dns/internal/cacher"
 	"github.com/im-kulikov/go-bones/logger"
 	"github.com/im-kulikov/go-bones/service"
 )
@@ -13,6 +12,6 @@ type Interface interface {
 }
 
 type server struct {
+	rec Storage
 	log logger.Logger
-	rec cacher.Interface
 }

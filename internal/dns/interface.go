@@ -24,6 +24,7 @@ type Interface interface {
 	cacher.Interface
 
 	Enabled() bool
+	List() map[string]*cacher.CacheItem
 }
 
 type server struct {
