@@ -1,13 +1,13 @@
 package bgp
 
 import (
-	"github.com/im-kulikov/docker-dns/internal/broadcast"
-	"github.com/osrg/gobgp/pkg/packet/bgp"
-	"go.uber.org/zap"
 	"net/netip"
+	"time"
 
+	"github.com/im-kulikov/docker-dns/internal/broadcast"
 	"github.com/im-kulikov/go-bones/logger"
 	"github.com/jwhited/corebgp"
+	"go.uber.org/zap"
 )
 
 type plugin struct {
@@ -37,6 +37,8 @@ func (p *plugin) OnEstablished(peer corebgp.PeerConfig, writer corebgp.UpdateMes
 	p.Infow("peer established", zap.Any("peer", peer))
 	p.rec.AddPeer(peer.RemoteAddress.String(), writer)
 
+	time.Sleep(time.Second) // wait before send initial update
+
 	// send End-of-Rib
 	if err := writer.WriteUpdate([]byte{0, 0, 0, 0}); err != nil {
 		return func(corebgp.PeerConfig, []byte) *corebgp.Notification {
@@ -44,16 +46,7 @@ func (p *plugin) OnEstablished(peer corebgp.PeerConfig, writer corebgp.UpdateMes
 		}
 	}
 
-	return func(peer corebgp.PeerConfig, updateMessage []byte) *corebgp.Notification {
-		var msg bgp.BGPUpdate
-		if err := msg.DecodeFromBytes(updateMessage); err != nil {
-			p.Errorw("could not decode update message", zap.Error(err))
-
-			return corebgp.UpdateNotificationFromErr(err)
-		}
-
-		return nil
-	}
+	return nil // ignore client updates
 }
 
 func (p *plugin) OnClose(peer corebgp.PeerConfig) {

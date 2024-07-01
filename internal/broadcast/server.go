@@ -132,11 +132,6 @@ func (s *server) sendInitialTables(writer corebgp.UpdateMessageWriter, msg Updat
 		removes = append(removes, bgp.NewIPAddrPrefix(32, address))
 	}
 
-	updates := make([]*bgp.IPAddrPrefix, 0, len(msg.ToUpdate))
-	for _, address := range msg.ToUpdate {
-		updates = append(updates, bgp.NewIPAddrPrefix(32, address))
-	}
-
 	attributes := make([]bgp.PathAttributeInterface, 0, 4)
 	attributes = append(attributes,
 		bgp.NewPathAttributeOrigin(bgp.BGP_ORIGIN_ATTR_TYPE_IGP),
@@ -144,18 +139,35 @@ func (s *server) sendInitialTables(writer corebgp.UpdateMessageWriter, msg Updat
 		bgp.NewPathAttributeNextHop(s.cfg.NextHop),
 		bgp.NewPathAttributeLocalPref(s.cfg.LocalPref))
 
-	out := &bgp.BGPUpdate{
-		WithdrawnRoutesLen:    uint16(len(removes)),
-		WithdrawnRoutes:       removes,
-		TotalPathAttributeLen: uint16(len(attributes)),
-		PathAttributes:        attributes,
-		NLRI:                  updates,
-	}
+	// send batches of 1000 updates
+	for i := 0; i < len(msg.ToUpdate); i += 1000 {
+		end := i + 1000
+		if end > len(msg.ToUpdate) {
+			end = len(msg.ToUpdate)
+		}
 
-	if buf, err := out.Serialize(); err != nil {
-		return err
-	} else if err = writer.WriteUpdate(buf); err != nil {
-		return err
+		updates := make([]*bgp.IPAddrPrefix, 0, len(msg.ToUpdate))
+		for _, address := range msg.ToUpdate {
+			updates = append(updates, bgp.NewIPAddrPrefix(32, address))
+		}
+
+		out := &bgp.BGPUpdate{
+			WithdrawnRoutesLen:    uint16(len(removes)),
+			WithdrawnRoutes:       removes,
+			TotalPathAttributeLen: uint16(len(attributes)),
+			PathAttributes:        attributes,
+			NLRI:                  updates,
+		}
+
+		if buf, err := out.Serialize(); err != nil {
+			return err
+		} else if err = writer.WriteUpdate(buf); err != nil {
+			return err
+		} else if err = writer.WriteUpdate([]byte{0, 0, 0, 0}); err != nil {
+			return err
+		}
+
+		removes = nil // remove withdrawn routes after the first batch
 	}
 
 	return writer.WriteUpdate([]byte{0, 0, 0, 0})
