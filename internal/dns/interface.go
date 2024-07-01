@@ -97,7 +97,8 @@ loop:
 			msg.ToUpdate = append(msg.ToUpdate, res.msg.ToUpdate...)
 			msg.ToRemove = append(msg.ToRemove, res.msg.ToRemove...)
 
-			if res.ttl < ttl && res.ttl > 0 {
+			// Update the TTL if it is greater than 10 seconds
+			if res.ttl < ttl && res.ttl > 0 && res.ttl > time.Second*10 {
 				ttl = res.ttl
 			}
 
