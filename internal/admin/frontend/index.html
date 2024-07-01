@@ -30,7 +30,7 @@
         </thead>
         <thead>
         <tr>
-            <th colspan="1">Всего IP</th>
+            <th colspan="1">Количество IP адресов (всего / уникальных)</th>
             <th colspan="2" id="total-count">0</th>
         </tr>
         </thead>
@@ -47,6 +47,7 @@
         const createForm = document.querySelector('#create-form');
         const totalCountElement = document.querySelector('#total-count');
         const refreshButton = document.querySelector('#refresh-button');
+        let uniqueIPs = new Set();
 
         const fetchCacheItems = async () => {
             const response = await fetch('/api');
@@ -63,9 +64,15 @@
             });
 
             data.list.forEach(item => {
-                const row = document.createElement('tr');
 
+                const row = document.createElement('tr');
                 totalCount += item.record ? item.record.length : 0;
+                if (!!item.record) {
+                    item.record.forEach(ip => {
+                        uniqueIPs.delete(ip);
+                        uniqueIPs.add(ip);
+                    });
+                }
 
                 row.innerHTML = `
                         <td>${item.domain}</td>
@@ -78,7 +85,7 @@
                 tableBody.appendChild(row);
             });
 
-            totalCountElement.textContent = totalCount;
+            totalCountElement.textContent = `${uniqueIPs.size} / ${totalCount}`;
         };
 
         createForm.addEventListener('submit', async (event) => {
