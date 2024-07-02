@@ -48,7 +48,7 @@ func New(cfg Config, log logger.Logger, rec broadcast.PeerManager) (Interface, e
 
 		log.Infow("adding peer", zap.Any("peer", conf), zap.String("router_id", cfg.RouteID))
 
-		if err = srv.AddPeer(conf, handler, corebgp.WithLocalAddress(rid)); err != nil {
+		if err = srv.AddPeer(conf, handler, corebgp.WithLocalAddress(rid), corebgp.WithPassive()); err != nil {
 			return nil, err
 		}
 	}

@@ -25,8 +25,8 @@
         <thead class="thead-light">
         <tr>
             <th>Домен</th>
-            <th>Кол-во IP</th>
-            <th>Действия</th>
+            <th style="width: 120px">Кол-во IP</th>
+            <th style="width: 140px">Действия</th>
         </tr>
         </thead>
         <thead>
@@ -67,36 +67,36 @@
             uniqueIPs.clear();
             resolvedDomains.clear();
 
-            data.list.sort((a, b) => {
-                const l1 =a.record ? a.record.length : 0;
-                const l2 =b.record ? b.record.length : 0;
+            data.list.sort(({domain: aDomain, record: aRecord}, {domain: bDomain, record: bRecord}) => {
+                const l1 =aRecord ? aRecord.length : 0;
+                const l2 =bRecord ? bRecord.length : 0;
 
                 if ((l2 - l1) === 0) {
-                    return a.domain.localeCompare(b.domain);
+                    return aDomain.localeCompare(bDomain);
                 }
 
                 return l2 - l1;
             });
 
-            data.list.forEach(item => {
+            data.list.forEach(({domain: iDomain, record: iRecord}) => {
 
                 const row = document.createElement('tr');
-                totalCount += item.record ? item.record.length : 0;
-                if (!!item.record) {
-                    resolvedDomains.add(item.domain)
+                totalCount += iRecord ? iRecord.length : 0;
+                if (!!iRecord) {
+                    resolvedDomains.add(iDomain)
 
-                    item.record.forEach(ip => {
+                    iRecord.forEach(ip => {
                         uniqueIPs.delete(ip);
                         uniqueIPs.add(ip);
                     });
                 }
 
                 row.innerHTML = `
-                        <td>${item.domain}</td>
-                        <td>${item.record ? item.record.length : 0}</td>
+                        <td>${iDomain}</td>
+                        <td>${iRecord ? iRecord.length : 0}</td>
                         <td>
-                            <button class="btn btn-danger btn-sm" onclick="deleteItem('${item.domain}')">Delete</button>
-                            <button class="btn btn-warning btn-sm" onclick="editItem('${item.domain}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteItem('${iDomain}')">Delete</button>
+                            <button class="btn btn-warning btn-sm" onclick="editItem('${iDomain}')">Edit</button>
                         </td>
                     `;
                 tableBody.appendChild(row);
@@ -116,7 +116,7 @@
                 body: JSON.stringify({ domain }),
             });
             if (response.ok) {
-                fetchCacheItems();
+                await fetchCacheItems();
                 createForm.reset();
             } else {
                 alert('Error creating item');
@@ -142,7 +142,7 @@
         window.deleteItem = async (domain) => {
             const response = await fetch(`/api/${domain}`, { method: 'DELETE' });
             if (response.ok) {
-                fetchCacheItems();
+                await fetchCacheItems();
             } else {
                 alert('Error deleting item');
             }

@@ -146,8 +146,8 @@ func (s *server) sendInitialTables(writer corebgp.UpdateMessageWriter, msg Updat
 			end = len(msg.ToUpdate)
 		}
 
-		updates := make([]*bgp.IPAddrPrefix, 0, len(msg.ToUpdate))
-		for _, address := range msg.ToUpdate {
+		updates := make([]*bgp.IPAddrPrefix, 0, len(msg.ToUpdate[i:end]))
+		for _, address := range msg.ToUpdate[i:end] {
 			updates = append(updates, bgp.NewIPAddrPrefix(32, address))
 		}
 
@@ -205,6 +205,7 @@ func (s *server) Start(ctx context.Context) error {
 					zap.Error(err))
 
 			case remPeer:
+				s.Infow("remove peer writer", zap.String("peer", msg.Peer))
 				delete(peer, msg.Peer)
 			default:
 				s.Infow("unknown Action", zap.Any("Action", msg))
